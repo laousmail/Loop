@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#121316">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="description" content="Turn the tracks you export from your looper into a loop and arrangements you can listen to on the road.">
+  <title>Loop Road</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="css/app.css">
+  <script type="module" src="js/main.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="./" aria-label="Loop Road home">
+      <svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="11" fill="none" stroke="currentColor" stroke-width="3"/><circle cx="16" cy="5" r="3.5" fill="var(--accent)"/></svg>
+      <span>Loop Road</span>
+    </a>
+    <button id="btn-settings" class="icon-btn" type="button" aria-label="Settings" title="Settings">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>
+    </button>
+  </header>
+
+  <main>
+    <!-- Load ------------------------------------------------------------ -->
+    <section id="screen-load" class="screen">
+      <div class="intro">
+        <h1>Your looper tracks, ready for the road.</h1>
+        <p class="lede">Paste a public Google Drive folder with the tracks you exported. Set the loop, build a B section, and render it to play in the car.</p>
+      </div>
+
+      <form id="load-form" class="card" novalidate>
+        <label for="drive-link" class="field-label">Google Drive folder link</label>
+        <input id="drive-link" name="link" type="url" inputmode="url" autocomplete="off" spellcheck="false"
+               placeholder="https://drive.google.com/drive/folders/…" required>
+        <p class="hint">Set the folder’s sharing to “Anyone with the link”. A link to each file also works, one per line.</p>
+        <p id="load-error" class="error" role="alert" hidden></p>
+        <button type="submit" class="btn primary block" id="btn-load">Load tracks</button>
+      </form>
+
+      <div class="divider"><span>or</span></div>
+
+      <label class="btn ghost block file-btn">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0-4 4m4-4 4 4M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Open audio files from this device
+        <input type="file" id="file-input" accept="audio/*,.wav,.aif,.aiff,.flac,.m4a,.mp3" multiple>
+      </label>
+
+      <div id="load-progress" class="card progress-card" hidden aria-live="polite"></div>
+
+      <section id="recent" class="recent" hidden>
+        <h2 class="section-label">Recent</h2>
+        <ul id="recent-list"></ul>
+      </section>
+    </section>
+
+    <!-- Studio ---------------------------------------------------------- -->
+    <section id="screen-studio" class="screen" hidden>
+      <div class="studio-head">
+        <div class="studio-title">
+          <p class="eyebrow" id="project-meta"></p>
+          <h1 id="project-name"></h1>
+        </div>
+        <button id="btn-change" class="btn ghost small" type="button">Change tracks</button>
+      </div>
+
+      <!-- 1. Loop -->
+      <section class="card" id="loop-card">
+        <header class="card-head">
+          <h2><span class="step">1</span>Set the loop</h2>
+          <button id="btn-edit-loop" class="btn ghost small" type="button" hidden>Edit loop</button>
+        </header>
+        <p id="loop-summary" class="loop-summary mono" hidden></p>
+
+        <div id="loop-body">
+          <p class="hint">Drag the <span class="tag start">start</span> and <span class="tag end">end</span> handles. Drag anywhere else to scroll when zoomed in.</p>
+          <div class="toolbar" role="toolbar" aria-label="Timeline zoom">
+            <button type="button" class="icon-btn" data-zoom="out" aria-label="Zoom out" title="Zoom out">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M8 11h6m2 5 4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+            </button>
+            <button type="button" class="icon-btn" data-zoom="in" aria-label="Zoom in" title="Zoom in">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M8 11h6m-3-3v6m5 2 4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+            </button>
+            <button type="button" class="btn ghost small" data-zoom="fit">Fit</button>
+            <span class="toolbar-sep"></span>
+            <button type="button" class="btn ghost small" data-zoom="start">Zoom to start</button>
+            <button type="button" class="btn ghost small" data-zoom="end">Zoom to end</button>
+          </div>
+
+          <div class="timeline">
+            <div class="lane-labels" id="lane-labels"></div>
+            <div class="canvas-wrap"><canvas id="tl-canvas" tabindex="0" aria-label="Timeline. Use left and right arrow keys to nudge the selected handle, [ and ] to pick start or end."></canvas></div>
+          </div>
+
+          <div class="loop-fields">
+            <div class="field">
+              <label for="loop-start" class="field-label">Start (s)</label>
+              <input id="loop-start" type="number" inputmode="decimal" step="0.001" min="0">
+            </div>
+            <div class="field">
+              <label for="loop-end" class="field-label">End (s)</label>
+              <input id="loop-end" type="number" inputmode="decimal" step="0.001" min="0">
+            </div>
+            <div class="field readout">
+              <span class="field-label">Length</span>
+              <span id="loop-length" class="mono"></span>
+            </div>
+          </div>
+
+          <div class="nudge" role="group" aria-label="Nudge a handle">
+            <div class="seg" role="group" aria-label="Handle">
+              <button type="button" data-nudge-target="start" aria-pressed="false">Start</button>
+              <button type="button" data-nudge-target="end" aria-pressed="true">End</button>
+            </div>
+            <label class="visually-hidden" for="nudge-step">Nudge step</label>
+            <select id="nudge-step">
+              <option value="sample">1 sample</option>
+              <option value="0.001" selected>1 ms</option>
+              <option value="0.01">10 ms</option>
+              <option value="0.1">100 ms</option>
+              <option value="beat">1 beat</option>
+            </select>
+            <button type="button" class="icon-btn" data-nudge="-1" aria-label="Nudge earlier" title="Nudge earlier">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 6-6 6 6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+            <button type="button" class="icon-btn" data-nudge="1" aria-label="Nudge later" title="Nudge later">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 6 6 6-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+            <button type="button" class="btn ghost small" id="btn-reset-loop">Reset to track length</button>
+          </div>
+
+          <details class="tempo" id="tempo">
+            <summary>Tempo &amp; bars <span id="tempo-guess" class="muted"></span></summary>
+            <div class="tempo-body">
+              <div class="field">
+                <label for="bpm" class="field-label">BPM</label>
+                <input id="bpm" type="number" inputmode="decimal" min="30" max="300" step="0.01" placeholder="e.g. 92">
+              </div>
+              <div class="field">
+                <label for="bpb" class="field-label">Beats per bar</label>
+                <input id="bpb" type="number" inputmode="numeric" min="1" max="16" step="1" value="4">
+              </div>
+              <div class="field">
+                <label for="bars" class="field-label">Bars</label>
+                <input id="bars" type="number" inputmode="numeric" min="1" max="128" step="1" value="4">
+              </div>
+              <button type="button" class="btn ghost small" id="btn-fit-bars">Set end from bars</button>
+              <label class="check"><input type="checkbox" id="snap"> Snap handles to beats</label>
+            </div>
+          </details>
+
+          <div class="card-actions">
+            <button type="button" class="btn primary" id="btn-confirm-loop">Use this loop</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Prompt for B -->
+      <section class="card prompt" id="arr-prompt" hidden>
+        <h2>Make an arrangement B?</h2>
+        <p>B starts as a copy of A. Then mute a track, push one louder, or double it an octave up or down.</p>
+        <div class="row">
+          <button type="button" class="btn primary" id="btn-make-b">Create B from A</button>
+          <button type="button" class="btn ghost" id="btn-skip-b">Not now</button>
+        </div>
+      </section>
+
+      <!-- 2. Arrangements -->
+      <section class="card" id="arr-card" hidden>
+        <header class="card-head">
+          <h2><span class="step">2</span>Arrangements</h2>
+        </header>
+        <div class="tabs-row">
+          <div class="tabs" id="arr-tabs" role="tablist" aria-label="Arrangements"></div>
+          <button type="button" class="btn ghost small" id="btn-new-arr">New from <span id="new-arr-from">A</span></button>
+        </div>
+        <p class="hint" id="arr-hint"></p>
+        <div id="mixer" class="mixer"></div>
+        <div class="card-actions split">
+          <button type="button" class="btn danger-ghost small" id="btn-delete-arr">Delete <span id="del-arr-name"></span></button>
+        </div>
+      </section>
+
+      <!-- 3. Song -->
+      <section class="card" id="song-card" hidden>
+        <header class="card-head">
+          <h2><span class="step">3</span>Song</h2>
+          <span id="song-length" class="mono muted"></span>
+        </header>
+        <p class="hint">The order arrangements play in. In Song mode it repeats from the top.</p>
+        <ol id="song-steps" class="song-steps"></ol>
+        <button type="button" class="btn ghost small" id="btn-add-step">Add part</button>
+      </section>
+
+      <!-- 4. Road -->
+      <section class="card" id="road-card" hidden>
+        <header class="card-head">
+          <h2><span class="step">4</span>Take it on the road</h2>
+        </header>
+        <p class="hint">Renders the song to one audio file. It keeps playing with your screen locked and over car Bluetooth, and you can save it.</p>
+        <div class="row">
+          <div class="field">
+            <label for="road-what" class="field-label">Play</label>
+            <select id="road-what">
+              <option value="song">The song</option>
+              <option value="arr">Current arrangement only</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="road-mins" class="field-label">Length</label>
+            <select id="road-mins">
+              <option value="5">About 5 min</option>
+              <option value="10" selected>About 10 min</option>
+              <option value="20">About 20 min</option>
+              <option value="30">About 30 min</option>
+            </select>
+          </div>
+          <button type="button" class="btn primary" id="btn-render">Render</button>
+        </div>
+        <div id="road-out" class="road-out" hidden>
+          <audio id="road-audio" controls loop preload="auto"></audio>
+          <div class="row">
+            <a id="road-download" class="btn ghost small" download>Save audio file</a>
+            <span id="road-info" class="muted"></span>
+          </div>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <!-- Transport ----------------------------------------------------------- -->
+  <div class="transport" id="transport" hidden>
+    <button id="btn-play" class="play" type="button" aria-label="Play" title="Play (Space)">
+      <svg class="i-play" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l11-6.5z" fill="currentColor"/></svg>
+      <svg class="i-stop" viewBox="0 0 24 24" aria-hidden="true"><rect x="6.5" y="6.5" width="11" height="11" rx="1.5" fill="currentColor"/></svg>
+    </button>
+    <div class="seg mode" role="group" aria-label="Playback mode">
+      <button type="button" data-mode="loop" aria-pressed="true">Loop</button>
+      <button type="button" data-mode="song" aria-pressed="false">Song</button>
+    </div>
+    <div class="now" aria-live="off">
+      <span id="now-arr" class="now-arr">A</span>
+      <span id="now-detail" class="mono muted"></span>
+    </div>
+    <label class="master">
+      <span class="visually-hidden">Master volume</span>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5h3l4.5-4v13l-4.5-4H4z" fill="currentColor"/><path d="M15 9a4 4 0 0 1 0 6m2.5-8.5a7.5 7.5 0 0 1 0 11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+      <input type="range" id="master" min="0" max="1.25" step="0.01" value="1">
+    </label>
+  </div>
+
+  <!-- Settings ------------------------------------------------------------ -->
+  <dialog id="settings" aria-labelledby="settings-title">
+    <form method="dialog" class="dialog-body" id="settings-form">
+      <h2 id="settings-title">Settings</h2>
+      <label for="api-key" class="field-label">Google Drive API key</label>
+      <input id="api-key" type="text" autocomplete="off" spellcheck="false" placeholder="AIza…">
+      <p class="hint">Browsers can only read public Drive folders through Google’s API, so the app needs a free key. It stays on this device.</p>
+      <details class="howto">
+        <summary>How to get a key (about 2 minutes)</summary>
+        <ol>
+          <li>Open <a href="https://console.cloud.google.com/apis/library/drive.googleapis.com" target="_blank" rel="noopener">Google Drive API in Google Cloud</a>, create or pick a project, and select <b>Enable</b>.</li>
+          <li>Go to <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener">Credentials</a>, select <b>Create credentials → API key</b>.</li>
+          <li>Recommended: under the key’s restrictions, limit it to the <b>Google Drive API</b> and to this site’s address.</li>
+          <li>Paste the key above.</li>
+        </ol>
+      </details>
+      <div class="dialog-row">
+        <button type="button" class="btn ghost small" id="btn-clear-cache">Clear downloaded audio</button>
+      </div>
+      <div class="dialog-actions">
+        <button value="cancel" class="btn ghost" formnovalidate>Cancel</button>
+        <button value="save" class="btn primary" id="btn-save-settings">Save key</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+</body>
+</html>
