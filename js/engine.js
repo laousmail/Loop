@@ -6,6 +6,7 @@
 // can't drift apart.
 
 import { voiceGain, songCycles, neededDoubles } from './state.js';
+import { laneBuffer } from './lanes.js';
 
 const RAMP = 0.006; // seconds; short fade so gain changes don't click
 const LOOKAHEAD = 1.2; // seconds of gain changes planned ahead
@@ -23,41 +24,28 @@ export function buildMaster(ctx, dest) {
   return gain;
 }
 
-function makeVoice(ctx, dest, trackId, semitones, buffer, loopStart, loopEnd, when, offset) {
+/** A voice loops a buffer that is exactly one loop long. */
+function makeVoice(ctx, dest, trackId, semitones, buffer, when, offset) {
   const src = ctx.createBufferSource();
   src.buffer = buffer;
   src.loop = true;
-  if (loopEnd > loopStart) {
-    src.loopStart = loopStart;
-    src.loopEnd = loopEnd;
-  }
   const gain = ctx.createGain();
   gain.gain.value = 0;
   src.connect(gain).connect(dest);
   src.start(when, offset);
-  return {
-    trackId,
-    semitones,
-    src,
-    gain,
-    planned: 0,
-    period: loopEnd > loopStart ? loopEnd - loopStart : buffer.duration,
-  };
+  return { trackId, semitones, src, gain, planned: 0 };
 }
 
 /** One voice per track plus one per ready pitched double, all starting at `when`. */
 export function buildVoices(ctx, dest, tracks, project, bank, when) {
-  const { start, end } = project.loop;
-  const L = end - start;
   const doubles = neededDoubles(project);
   const voices = [];
   for (const t of tracks) {
-    const mult = project.mult[t.id] || 1;
-    voices.push(makeVoice(ctx, dest, t.id, 0, t.buffer, start, start + L * mult, when, start));
+    voices.push(makeVoice(ctx, dest, t.id, 0, laneBuffer(t, project), when, 0));
     for (const d of doubles) {
       if (d.trackId !== t.id) continue;
       const buf = bank.get(project, t, d.semitones);
-      if (buf) voices.push(makeVoice(ctx, dest, t.id, d.semitones, buf, 0, 0, when, 0));
+      if (buf) voices.push(makeVoice(ctx, dest, t.id, d.semitones, buf, when, 0));
     }
   }
   return voices;
@@ -217,22 +205,15 @@ export class Engine {
       if (!buf) continue;
       const when = Math.max(this.t0, this.ctx.currentTime + 0.03);
       const offset = (when - this.t0) % buf.duration;
-      this.voices.push(makeVoice(this.ctx, this.master, d.trackId, d.semitones, buf, 0, 0, when, offset));
+      this.voices.push(makeVoice(this.ctx, this.master, d.trackId, d.semitones, buf, when, offset));
       added = true;
     }
     if (added) this.refresh();
   }
 
-  /** Playhead position (seconds into the track) for each track. */
-  playheads() {
+  /** Playhead position on the timeline, in seconds. */
+  playhead() {
     if (!this.playing) return null;
-    const el = this.elapsed();
-    const L = this.L;
-    const out = {};
-    for (const t of this.tracks) {
-      const p = L * (this.project.mult[t.id] || 1);
-      out[t.id] = this.project.loop.start + (el % p);
-    }
-    return out;
+    return this.project.loop.start + (this.elapsed() % this.L);
   }
 }

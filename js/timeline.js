@@ -1,6 +1,6 @@
 // Stacked waveform timeline with draggable loop start/end handles.
 
-import { TRACK_COLORS, quantize, maxLoopEnd, formatTime } from './state.js';
+import { TRACK_COLORS, quantize, formatTime } from './state.js';
 
 const RULER = 26;
 const HANDLE_HIT = 28; // px, generous for touch
@@ -49,7 +49,7 @@ export class Timeline {
     this.active = 'end';
     this.laneH = 56;
     this.tracks = [];
-    this.playheads = null;
+    this.playhead = null;
     this.waveDirty = true;
 
     new ResizeObserver(() => this.resize()).observe(this.canvas.parentElement);
@@ -78,28 +78,9 @@ export class Timeline {
       row.className = 'lane-label';
       row.style.setProperty('--c', t.color);
       row.style.height = this.laneH + 'px';
-      row.innerHTML = `<span class="lane-name" title="${escapeHtml(t.name)}"><span class="dot"></span>${escapeHtml(t.short)}</span>`;
-      const sel = document.createElement('select');
-      sel.className = 'mult';
-      sel.setAttribute('aria-label', `${t.name} length in loops`);
-      sel.title = 'Track length, in loops';
-      row.appendChild(sel);
-      sel.addEventListener('change', () => this.opts.onMult(t.id, Number(sel.value)));
-      t.multSelect = sel;
+      const name = this.opts.nameOf(t);
+      row.innerHTML = `<span class="lane-name" title="${escapeHtml(name)}"><span class="dot"></span><span>${escapeHtml(name)}</span></span>`;
       this.labels.appendChild(row);
-    }
-    this.updateMultOptions();
-  }
-
-  updateMultOptions() {
-    const L = this.project.loop.end - this.project.loop.start;
-    for (const t of this.tracks) {
-      const room = t.buffer.duration - this.project.loop.start;
-      const cur = this.project.mult[t.id] || 1;
-      t.multSelect.innerHTML = [1, 2, 4, 8]
-        .filter((m) => m === 1 || m * L <= room + 1e-6 || m === cur)
-        .map((m) => `<option value="${m}" ${m === cur ? 'selected' : ''}>×${m}</option>`)
-        .join('');
     }
   }
 
@@ -219,23 +200,12 @@ export class Timeline {
     }
   }
 
-  /** Move a handle, applying limits and snapping. `live` = mid-drag. */
+  /** Move a handle, keeping the loop inside the tracks. `live` = mid-drag. */
   setHandle(which, t, live) {
     const p = this.project;
-    if (p.snap && p.bpm > 0) {
-      const beat = 60 / p.bpm;
-      t = Math.round(t / beat) * beat;
-    }
     t = quantize(t, this.sr);
-    if (which === 'start') {
-      t = Math.max(0, Math.min(t, p.loop.end - MIN_LOOP));
-      const oldStart = p.loop.start;
-      p.loop.start = t;
-      if (p.loop.end > maxLoopEnd(p, this.tracks)) p.loop.start = oldStart;
-    } else {
-      t = Math.max(p.loop.start + MIN_LOOP, Math.min(t, maxLoopEnd(p, this.tracks)));
-      p.loop.end = quantize(t, this.sr);
-    }
+    if (which === 'start') p.loop.start = Math.max(0, Math.min(t, p.loop.end - MIN_LOOP));
+    else p.loop.end = Math.max(p.loop.start + MIN_LOOP, Math.min(t, quantize(this.duration, this.sr)));
     if (live) this.opts.onInput();
     this.draw();
   }
@@ -252,13 +222,22 @@ export class Timeline {
       const y0 = RULER + i * this.laneH;
       const mid = y0 + this.laneH / 2;
       const amp = this.laneH / 2 - 6;
-      g.fillStyle = t.color;
       const chs = [];
       if (spp < BLOCK) for (let c = 0; c < t.buffer.numberOfChannels; c++) chs.push(t.buffer.getChannelData(c));
+      const n = t.buffer.length;
       for (let px = 0; px < w; px++) {
-        const s0 = Math.floor((t0 + (px / w) * (t1 - t0)) * this.sr);
-        const s1 = Math.max(s0 + 1, Math.floor((t0 + ((px + 1) / w) * (t1 - t0)) * this.sr));
-        if (s0 >= t.buffer.length || s1 <= 0) continue;
+        let s0 = Math.floor((t0 + (px / w) * (t1 - t0)) * this.sr);
+        let s1 = Math.max(s0 + 1, Math.floor((t0 + ((px + 1) / w) * (t1 - t0)) * this.sr));
+        if (s1 <= 0) continue;
+        // Past its end, a shorter track repeats: draw the repeat faded.
+        const repeat = s0 >= n;
+        if (repeat) {
+          const span = s1 - s0;
+          s0 %= n;
+          s1 = Math.min(n, s0 + span);
+        }
+        g.fillStyle = t.color;
+        g.globalAlpha = repeat ? 0.4 : 1;
         let lo = 0, hi = 0;
         if (spp >= BLOCK) {
           const b0 = Math.floor(s0 / BLOCK), b1 = Math.min(t.peaks.min.length, Math.ceil(s1 / BLOCK));
@@ -267,7 +246,7 @@ export class Timeline {
             if (t.peaks.max[b] > hi) hi = t.peaks.max[b];
           }
         } else {
-          const e = Math.min(t.buffer.length, s1 + 1);
+          const e = Math.min(n, s1 + 1);
           for (const ch of chs) for (let s = Math.max(0, s0); s < e; s++) {
             if (ch[s] < lo) lo = ch[s];
             if (ch[s] > hi) hi = ch[s];
@@ -277,6 +256,7 @@ export class Timeline {
         const bot = mid - Math.max(-1, lo) * amp;
         g.fillRect(px, top, 1, Math.max(1, bot - top));
       }
+      g.globalAlpha = 1;
     });
     this.waveDirty = false;
   }
@@ -304,26 +284,12 @@ export class Timeline {
     g.fillStyle = col.loop;
     g.fillRect(xs, RULER, xe - xs, h - RULER);
 
-    // tracks that run 2x/4x the loop: show their extra length
-    const L = p.loop.end - p.loop.start;
-    this.tracks.forEach((t, i) => {
-      const m = p.mult[t.id] || 1;
-      if (m > 1) {
-        g.fillStyle = col.loop;
-        g.fillRect(xe, RULER + i * this.laneH + 1, this.x(p.loop.start + L * m) - xe, this.laneH - 2);
-      }
-    });
-
     g.drawImage(this.wave, 0, 0, w, h);
 
-    // dim everything outside each track's loop
+    // dim everything outside the loop
     g.fillStyle = col.dim;
-    this.tracks.forEach((t, i) => {
-      const y = RULER + i * this.laneH;
-      const endX = this.x(p.loop.start + L * (p.mult[t.id] || 1));
-      if (xs > 0) g.fillRect(0, y, xs, this.laneH);
-      if (endX < w) g.fillRect(endX, y, w - endX, this.laneH);
-    });
+    if (xs > 0) g.fillRect(0, RULER, xs, h - RULER);
+    if (xe < w) g.fillRect(xe, RULER, w - xe, h - RULER);
 
     this.drawRuler(g, col);
 
@@ -349,19 +315,15 @@ export class Timeline {
       g.fill();
     }
 
-    // playheads
-    if (this.playheads) {
+    // playhead
+    if (this.playhead != null) {
+      const x = Math.round(this.x(this.playhead)) + 0.5;
       g.strokeStyle = col.head;
       g.lineWidth = 1.5;
-      this.tracks.forEach((t, i) => {
-        const ph = this.playheads[t.id];
-        if (ph == null) return;
-        const x = Math.round(this.x(ph)) + 0.5;
-        g.beginPath();
-        g.moveTo(x, RULER + i * this.laneH + 2);
-        g.lineTo(x, RULER + (i + 1) * this.laneH - 2);
-        g.stroke();
-      });
+      g.beginPath();
+      g.moveTo(x, RULER);
+      g.lineTo(x, h);
+      g.stroke();
     }
   }
 
@@ -369,7 +331,6 @@ export class Timeline {
     const { w } = this;
     const { t0, t1 } = this.view;
     const span = t1 - t0;
-    const p = this.project;
     g.fillStyle = css('--surface');
     g.fillRect(0, 0, w, RULER);
     g.strokeStyle = col.line;
@@ -377,24 +338,6 @@ export class Timeline {
     g.moveTo(0, RULER - 0.5);
     g.lineTo(w, RULER - 0.5);
     g.stroke();
-
-    // beat grid when a tempo is set
-    if (p.bpm > 0) {
-      const beat = 60 / p.bpm;
-      if ((beat / span) * w >= 6) {
-        const bpb = p.beatsPerBar || 4;
-        for (let b = Math.ceil(t0 / beat); b * beat <= t1; b++) {
-          const x = Math.round(this.x(b * beat)) + 0.5;
-          g.strokeStyle = col.line;
-          g.globalAlpha = b % bpb === 0 ? 0.9 : 0.4;
-          g.beginPath();
-          g.moveTo(x, b % bpb === 0 ? RULER - 10 : RULER - 5);
-          g.lineTo(x, this.h);
-          g.stroke();
-        }
-        g.globalAlpha = 1;
-      }
-    }
 
     const steps = [0.001, 0.005, 0.01, 0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 15, 30, 60];
     const step = steps.find((s) => (s / span) * w >= 70) || 60;

@@ -1,8 +1,11 @@
-// Builds and caches pitch-shifted copies of each track's loop region.
+// Builds and caches pitch-shifted copies of each track's lane.
+
+import { loopRegion, laneChannels, makeBuffer } from './lanes.js';
+
+const SEMIS = [-24, -12, -7, -5, 5, 7, 12, 24];
 
 export class PitchBank {
-  constructor(ctx) {
-    this.ctx = ctx;
+  constructor() {
     this.cache = new Map(); // key -> AudioBuffer
     this.pending = new Map(); // key -> Promise<AudioBuffer>
     this.jobs = new Map();
@@ -27,47 +30,34 @@ export class PitchBank {
     };
   }
 
-  /** Region of a track that a voice loops over, in sample frames. */
-  static region(project, track) {
-    const sr = track.buffer.sampleRate;
-    const start = Math.round(project.loop.start * sr);
-    const base = Math.round(project.loop.end * sr) - start;
-    const frames = Math.min(base * (project.mult[track.id] || 1), track.buffer.length - start);
-    return { start, frames };
-  }
-
-  key(track, semitones, region) {
-    return `${track.id}|${semitones}|${region.start}|${region.frames}`;
+  key(project, track, semitones) {
+    const r = loopRegion(project, track.buffer.sampleRate);
+    return `${track.id}|${semitones}|${r.start}|${r.frames}`;
   }
 
   get(project, track, semitones) {
-    return this.cache.get(this.key(track, semitones, PitchBank.region(project, track)));
+    return this.cache.get(this.key(project, track, semitones));
   }
 
   has(project, track, semitones) {
-    return this.cache.has(this.key(track, semitones, PitchBank.region(project, track)));
+    return this.cache.has(this.key(project, track, semitones));
   }
 
   /** @returns {Promise<AudioBuffer>} */
   ensure(project, track, semitones) {
-    const region = PitchBank.region(project, track);
-    const key = this.key(track, semitones, region);
+    const key = this.key(project, track, semitones);
     if (this.cache.has(key)) return Promise.resolve(this.cache.get(key));
     if (this.pending.has(key)) return this.pending.get(key);
     this.ensureWorker();
-    const buf = track.buffer;
-    const channels = [];
-    for (let c = 0; c < buf.numberOfChannels; c++) {
-      channels.push(buf.getChannelData(c).slice(region.start, region.start + region.frames));
-    }
+    const sr = track.buffer.sampleRate;
+    const channels = laneChannels(track, loopRegion(project, sr));
     const id = this.nextId++;
     const p = new Promise((resolve, reject) => {
       this.jobs.set(id, { resolve, reject });
       this.worker.postMessage({ id, channels, semitones }, channels.map((c) => c.buffer));
     })
       .then((out) => {
-        const ab = this.ctx.createBuffer(out.length, region.frames, buf.sampleRate);
-        out.forEach((ch, i) => ab.copyToChannel(ch, i));
+        const ab = makeBuffer(out, sr);
         this.cache.set(key, ab);
         return ab;
       })
@@ -79,10 +69,7 @@ export class PitchBank {
   /** Drop cached buffers that don't match the current loop. */
   prune(project, tracks) {
     const keep = new Set();
-    for (const t of tracks) {
-      const r = PitchBank.region(project, t);
-      for (const s of [-24, -12, -7, -5, 5, 7, 12, 24]) keep.add(this.key(t, s, r));
-    }
+    for (const t of tracks) for (const s of SEMIS) keep.add(this.key(project, t, s));
     for (const k of this.cache.keys()) if (!keep.has(k)) this.cache.delete(k);
   }
 }

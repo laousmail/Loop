@@ -6,9 +6,10 @@ from it, and take it on the road.
 1. Put your looper's 4–6 track files in a Google Drive folder and set sharing to
    **Anyone with the link**.
 2. Paste the folder link into the app.
-3. The tracks load into a timeline. Drag the **start** and **end** handles (or
-   type exact times, nudge by 1 sample / 1 ms / 10 ms / 1 beat, or set the
-   length from BPM and bars), then press **Use this loop**.
+3. The tracks load into a timeline. Move the **Start** and **End** sliders (or
+   drag the handles on the timeline), using the ‹ › buttons for small moves
+   (hold them to keep moving), then press **Use this loop**. Nothing to type.
+   Tap a track's name in the mixer to rename it.
 4. The app offers to make **arrangement B** from A. In B (or C, D…) you can
    turn tracks off, push a track's volume up to 150%, or **double** a track with
    a pitched copy (octave up or down, fifth, fourth, two octaves).
@@ -69,7 +70,8 @@ bookmark a project.
 | `js/drive.js` | Parses Drive links, lists the folder, and downloads files through the Drive v3 API, with readable error messages |
 | `js/cache.js` | Keeps downloaded tracks in IndexedDB so projects reopen instantly and offline |
 | `js/state.js` | Project model (loop, track lengths, arrangements, song), saved in `localStorage` per folder |
-| `js/timeline.js` | Canvas waveforms, loop handles, zoom, and beat grid |
+| `js/timeline.js` | Canvas waveforms, loop handles, and zoom |
+| `js/lanes.js` | Builds what each track plays in one loop, repeating shorter tracks to fill it |
 | `js/engine.js` | Web Audio playback. Each track and each double is one looping source that never stops. Arrangements are gain changes ramped exactly on loop boundaries, so tracks can't drift |
 | `js/dsp/pitchshift.js` | Loop-aware pitch shifter (phase-vocoder time-stretch, then circular resample). The output is the same length as the loop and loops without a gap, so doubles stay in sync |
 | `js/pitch-worker.js` | Runs the pitch shifter off the main thread |
@@ -78,10 +80,9 @@ bookmark a project.
 
 Notes:
 
-- **Longer tracks.** If a track is 2× or 4× the loop length (common when one
-  looper track is recorded longer), the app detects it and loops that track
-  over its full length. You can change this per track with the ×1/×2/×4
-  control next to each lane.
+- **Tracks of different lengths.** The loop starts out as long as the longest
+  track and can't run past it. A shorter track repeats from its own beginning
+  until the loop ends, shown faded on the timeline.
 - **Sample-accurate loop points.** Loop points snap to whole samples, so a
   track and its pitched double stay locked forever.
 - **Locked screen.** Live playback keeps the screen awake while playing.

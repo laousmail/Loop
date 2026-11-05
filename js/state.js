@@ -33,32 +33,17 @@ export const defaultMix = () => ({ on: true, volume: 1, double: { semitones: 0, 
 /** Snap a time to the nearest sample frame. */
 export const quantize = (t, sr) => Math.round(t * sr) / sr;
 
-function guessMultiples(tracks, base) {
-  const mult = {};
-  for (const t of tracks) {
-    const r = t.buffer.duration / base;
-    let m = 1;
-    for (const c of [8, 4, 2]) {
-      if (r >= c * 0.99 && Math.abs(r - c) / c < 0.02) { m = c; break; }
-    }
-    mult[t.id] = m;
-  }
-  return mult;
-}
-
 export function createProject(sourceKey, tracks) {
   const sr = tracks[0].buffer.sampleRate;
-  const base = Math.min(...tracks.map((t) => t.buffer.duration));
+  // Default loop = the longest track; shorter tracks repeat to fill it.
+  const longest = Math.max(...tracks.map((t) => t.buffer.duration));
   const mixA = {};
   for (const t of tracks) mixA[t.id] = defaultMix();
   return {
     version: 1,
     sourceKey,
-    loop: { start: 0, end: quantize(base, sr) },
-    mult: guessMultiples(tracks, base),
-    bpm: null,
-    beatsPerBar: 4,
-    snap: false,
+    loop: { start: 0, end: quantize(longest, sr) },
+    names: {},
     loopConfirmed: false,
     askedForB: false,
     arrangements: [{ id: 'A', name: 'A', mix: mixA }],
@@ -70,9 +55,8 @@ export function createProject(sourceKey, tracks) {
 export function reconcile(project, tracks) {
   const sr = tracks[0].buffer.sampleRate;
   const maxDur = Math.max(...tracks.map((t) => t.buffer.duration));
-  project.mult ||= {};
+  project.names ||= {};
   for (const t of tracks) {
-    if (!project.mult[t.id]) project.mult[t.id] = 1;
     for (const a of project.arrangements) {
       a.mix[t.id] = { ...defaultMix(), ...(a.mix[t.id] || {}) };
       a.mix[t.id].double = { ...defaultMix().double, ...(a.mix[t.id].double || {}) };
@@ -84,33 +68,20 @@ export function reconcile(project, tracks) {
   }
   project.loop.start = quantize(project.loop.start, sr);
   project.loop.end = quantize(project.loop.end, sr);
-  clampMultiples(project, tracks);
   const ids = new Set(project.arrangements.map((a) => a.id));
   project.song = (project.song || []).filter((s) => ids.has(s.arr));
   if (!project.song.length) project.song = [{ arr: project.arrangements[0].id, repeats: 4 }];
   return project;
 }
 
-/** Longest multiple of the loop that still fits inside a track. */
-export function maxMultiple(project, track) {
-  const L = project.loop.end - project.loop.start;
-  const room = track.buffer.duration - project.loop.start;
-  let m = 1;
-  for (const c of [2, 4, 8]) if (c * L <= room + 1e-6) m = c;
-  return m;
+/** Latest allowed loop end: the end of the longest track. */
+export function maxLoopEnd(tracks) {
+  return Math.max(...tracks.map((t) => t.buffer.duration));
 }
 
-export function clampMultiples(project, tracks) {
-  for (const t of tracks) {
-    const max = maxMultiple(project, t);
-    if ((project.mult[t.id] || 1) > max) project.mult[t.id] = max;
-  }
-}
-
-/** Latest allowed loop end for the current start and multiples. */
-export function maxLoopEnd(project, tracks) {
-  const s = project.loop.start;
-  return Math.min(...tracks.map((t) => s + (t.buffer.duration - s) / (project.mult[t.id] || 1)));
+/** Name shown for a track: the user's name for it, or its file name. */
+export function trackName(project, track) {
+  return (project.names && project.names[track.id]) || track.short;
 }
 
 export function loadProject(sourceKey) {

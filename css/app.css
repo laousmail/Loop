@@ -217,24 +217,36 @@ input[type="range"] { accent-color: var(--accent); width: 100%; min-height: 28px
   display: flex; flex-direction: column; justify-content: center; gap: 2px;
   padding: 0 8px; border-top: 1px solid var(--line); min-width: 0;
 }
+.lane-name > span:last-child { overflow: hidden; text-overflow: ellipsis; }
 .lane-name { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--c); flex: none; }
-.lane-label select.mult { min-height: 26px; padding: 0 22px 0 6px; font-size: 12px; width: auto; align-self: flex-start; background-position: calc(100% - 13px) 50%, calc(100% - 8px) 50%; background-size: 4px 4px; }
 .canvas-wrap { position: relative; min-width: 0; }
 #tl-canvas { display: block; width: 100%; touch-action: pan-y; cursor: grab; }
 #tl-canvas:focus-visible { outline-offset: -2px; }
 
-.loop-fields { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
-.readout span.mono { min-height: 44px; display: flex; align-items: center; font-size: 15px; }
-.nudge { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.nudge select { width: auto; min-height: 40px; }
+.loop-sliders { display: flex; flex-direction: column; gap: 14px; padding-top: 4px; }
+.slider-row {
+  display: grid; align-items: center; gap: 8px;
+  grid-template-columns: 52px 40px 1fr 40px 5.5em;
+  grid-template-areas: "label minus slider plus out";
+}
+.slider-label { grid-area: label; font-weight: 650; color: var(--handle); }
+.slider-row .fine[data-fine="-1"] { grid-area: minus; }
+.slider-row .fine[data-fine="1"] { grid-area: plus; }
+.slider-row .loop-slider { grid-area: slider; accent-color: var(--handle); min-height: 40px; touch-action: none; }
+.slider-out { grid-area: out; text-align: right; font-size: 15px; }
+.fine { touch-action: manipulation; user-select: none; -webkit-user-select: none; }
+.loop-length-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; color: var(--text-2); font-size: 14px; }
+.loop-length-row b { color: var(--text-1); font-weight: 600; }
 .loop-summary { color: var(--text-2); font-size: 14px; }
 
-.tempo { border-top: 1px solid var(--line); padding-top: 8px; }
-.tempo summary { cursor: pointer; font-weight: 600; font-size: 14px; min-height: 36px; display: flex; align-items: center; gap: 8px; }
-.tempo summary .muted { font-weight: 400; }
-.tempo-body { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; padding: 8px 0 4px; }
-.tempo-body .field { width: 110px; }
+.name-input {
+  font: inherit; font-weight: 600; color: var(--text-1); background: transparent;
+  border: 1px solid transparent; border-radius: 6px; padding: 4px 6px; margin-left: -6px;
+  min-width: 0; width: 100%; min-height: 36px; text-overflow: ellipsis;
+}
+.name-input:hover { border-color: var(--line); }
+.name-input:focus { border-color: var(--focus); outline: none; background: var(--bg); }
 
 .prompt { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); background: linear-gradient(var(--accent-soft), var(--accent-soft)), var(--surface); }
 .prompt h2 { font-size: 17px; }
@@ -358,18 +370,16 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.55); }
 @media (max-width: 560px) {
   .intro h1 { font-size: 24px; }
   .timeline { grid-template-columns: 84px 1fr; }
-  .loop-fields { grid-template-columns: 1fr 1fr; }
-  .loop-fields .readout { grid-column: 1 / -1; flex-direction: row; align-items: center; gap: 8px; }
-  .readout span.mono { min-height: 0; }
+  .slider-row {
+    grid-template-columns: 40px 1fr 40px;
+    grid-template-areas: "label out out" "minus slider plus";
+    gap: 4px 8px;
+  }
   .master { width: 96px; }
   .seg.mode button { padding: 0 10px; }
   .now-arr { font-size: 20px; }
   .toolbar .btn.small { padding: 0 10px; }
   .toolbar-sep { display: none; }
-  .nudge { display: grid; grid-template-columns: auto 1fr auto auto; }
-  .nudge select { width: 100%; }
-  .nudge #btn-reset-loop { grid-column: 1 / -1; justify-self: start; }
-  .nudge .seg button { padding: 0 12px; }
   .song-step { flex-wrap: nowrap; gap: 6px; }
   .song-step .idx { display: none; }
   .song-step select { min-width: 64px; }

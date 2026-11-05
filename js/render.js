@@ -16,11 +16,8 @@ export async function renderPass(tracks, project, bank, { mode, arr }) {
   const loopFrames = Math.round(project.loop.end * sr) - startF;
   const L = loopFrames / sr;
   const seq = mode === 'song' ? songCycles(project) : [arr];
-  // Make the pass a whole number of every track's period (multiples are powers of 2).
-  const maxMult = Math.max(...tracks.map((t) => project.mult[t.id] || 1));
-  let cycles = seq.length;
-  while (cycles % maxMult) cycles += seq.length;
-  const warm = maxMult; // keeps every track's phase aligned with the pass
+  const cycles = seq.length;
+  const warm = 1;
   const arrAt = (c) => seq[(((c - warm) % seq.length) + seq.length) % seq.length];
 
   const frames = cycles * loopFrames;

@@ -8,7 +8,7 @@ import { renderPass, passToWav } from './render.js';
 import {
   SEMITONES, TRACK_COLORS, storage, createProject, reconcile, loadProject, saveProject,
   duplicateArrangement, getArrangement, neededDoubles, songCycles, addRecent, recentList,
-  removeRecent, formatTime, quantize, clampMultiples, maxLoopEnd,
+  removeRecent, formatTime, maxLoopEnd, trackName,
 } from './state.js';
 
 const $ = (s, el = document) => el.querySelector(s);
@@ -85,7 +85,7 @@ function ensureAudio() {
     const AC = window.AudioContext || window.webkitAudioContext;
     app.ctx = new AC({ latencyHint: 'playback' });
     app.engine = new Engine(app.ctx);
-    app.bank = new PitchBank(app.ctx);
+    app.bank = new PitchBank();
     app.engine.setMaster(Number($('#master').value));
   }
   try {
@@ -250,7 +250,6 @@ function openProject(sourceKey, name, tracks, source) {
   const sr = tracks[0].buffer.sampleRate;
   $('#project-meta').textContent = `${tracks.length} tracks · ${(sr / 1000).toFixed(1)} kHz`;
   timeline.setData(tracks, project);
-  syncTempoFields();
   renderAll();
   setPlayingUI(false);
   ensureDoubles();
@@ -272,47 +271,23 @@ function closeProject() {
 const timeline = new Timeline({
   canvas: $('#tl-canvas'),
   labels: $('#lane-labels'),
+  nameOf: (t) => trackName(app.project, t),
   onInput: () => renderLoopFields(),
   onCommit: () => commitLoop(),
-  onMult: (id, m) => {
-    app.project.mult[id] = m;
-    const max = maxLoopEnd(app.project, app.tracks);
-    if (app.project.loop.end > max) app.project.loop.end = quantize(max, app.tracks[0].buffer.sampleRate);
-    commitLoop();
-    timeline.draw();
-  },
 });
+
+const FINE_STEP = 0.01; // seconds per tap of ‹ ›; held down it speeds up
 
 function renderLoopFields() {
   const { start, end } = app.project.loop;
-  const L = end - start;
-  if (document.activeElement !== $('#loop-start')) $('#loop-start').value = start.toFixed(3);
-  if (document.activeElement !== $('#loop-end')) $('#loop-end').value = end.toFixed(3);
-  const p = app.project;
-  let txt = formatTime(L);
-  if (p.bpm > 0) {
-    const beats = (L * p.bpm) / 60;
-    const bars = beats / (p.beatsPerBar || 4);
-    txt += ` · ${+bars.toFixed(2)} bars`;
+  const max = maxLoopEnd(app.tracks);
+  for (const [which, v] of [['start', start], ['end', end]]) {
+    const slider = $(`#${which}-slider`);
+    slider.max = String(max);
+    slider.value = String(v);
+    $(`#${which}-out`).textContent = formatTime(v, 2);
   }
-  $('#loop-length').textContent = txt;
-  $('#tempo-guess').textContent = p.bpm > 0 ? `${+p.bpm.toFixed(2)} BPM` : guessTempo(L);
-}
-
-function guessTempo(L) {
-  const bpb = app.project.beatsPerBar || 4;
-  for (const bars of [1, 2, 4, 8, 16]) {
-    const bpm = (bars * bpb * 60) / L;
-    if (bpm >= 70 && bpm <= 170) return `≈ ${bpm.toFixed(1)} BPM if ${bars} bar${bars > 1 ? 's' : ''}`;
-  }
-  return '';
-}
-
-function syncTempoFields() {
-  const p = app.project;
-  $('#bpm').value = p.bpm || '';
-  $('#bpb').value = p.beatsPerBar || 4;
-  $('#snap').checked = !!p.snap;
+  $('#loop-length').textContent = formatTime(end - start, 2);
 }
 
 const restartSoon = debounce(async () => {
@@ -322,8 +297,6 @@ const restartSoon = debounce(async () => {
 }, 250);
 
 function commitLoop() {
-  clampMultiples(app.project, app.tracks);
-  timeline.updateMultOptions();
   renderLoopFields();
   renderSummary();
   renderSongLength();
@@ -335,34 +308,49 @@ function commitLoop() {
 
 function renderSummary() {
   const { start, end } = app.project.loop;
-  $('#loop-summary').textContent = `${formatTime(start)} → ${formatTime(end)} · ${formatTime(end - start)} long`;
+  $('#loop-summary').textContent = `${formatTime(start, 2)} → ${formatTime(end, 2)} · ${formatTime(end - start, 2)} long`;
 }
 
-function nudge(dir) {
-  const which = timeline.active;
-  const sel = $('#nudge-step').value;
-  const sr = app.tracks[0].buffer.sampleRate;
-  let step;
-  if (sel === 'sample') step = 1 / sr;
-  else if (sel === 'beat') {
-    if (!(app.project.bpm > 0)) {
-      toast('Set a BPM under Tempo & bars first.');
-      $('#tempo').open = true;
-      return;
-    }
-    step = 60 / app.project.bpm;
-  } else step = Number(sel);
-  const snap = app.project.snap;
-  app.project.snap = false; // nudges are exact
-  timeline.setHandle(which, app.project.loop[which] + dir * step, false);
-  app.project.snap = snap;
-  commitLoop();
-}
-
-function setNudgeTarget(which) {
+function moveHandle(which, delta) {
   timeline.active = which;
-  $$('[data-nudge-target]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.nudgeTarget === which)));
-  timeline.draw();
+  timeline.setHandle(which, app.project.loop[which] + delta, false);
+  renderLoopFields();
+}
+
+/** ‹ › buttons: one small step per tap; hold to keep moving, faster over time. */
+function bindFineButton(btn) {
+  const which = btn.closest('.slider-row').dataset.which;
+  const dir = Number(btn.dataset.fine);
+  let timer = 0;
+  let held = 0;
+  const stop = () => {
+    if (!timer) return;
+    clearTimeout(timer);
+    timer = 0;
+    commitLoop();
+  };
+  const tick = () => {
+    held++;
+    moveHandle(which, dir * FINE_STEP * (held > 25 ? 10 : held > 10 ? 3 : 1));
+    timer = setTimeout(tick, 70);
+  };
+  btn.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    btn.setPointerCapture(e.pointerId);
+    held = 0;
+    moveHandle(which, dir * FINE_STEP);
+    timer = setTimeout(tick, 400);
+  });
+  btn.addEventListener('pointerup', stop);
+  btn.addEventListener('pointercancel', stop);
+  btn.addEventListener('lostpointercapture', stop);
+  btn.addEventListener('contextmenu', (e) => e.preventDefault());
+  // keyboard activation (Enter/Space) arrives as a click with detail 0
+  btn.addEventListener('click', (e) => {
+    if (e.detail !== 0) return;
+    moveHandle(which, dir * FINE_STEP);
+    commitLoop();
+  });
 }
 
 // --- arrangements ----------------------------------------------------------
@@ -392,16 +380,17 @@ function renderMixer() {
     const c = TRACK_COLORS[i % TRACK_COLORS.length];
     const dbl = m.double.semitones;
     const busy = app.busy.has(`${t.id}|${dbl}`);
+    const name = escapeHtml(trackName(app.project, t));
     return `<div class="mix-row ${m.on ? '' : 'off'}" data-id="${escapeHtml(t.id)}" style="--c:${c}">
-      <div class="mix-name"><span class="dot"></span><span title="${escapeHtml(t.name)}">${escapeHtml(t.short)}</span></div>
-      <button type="button" class="mute" data-k="on" aria-pressed="${m.on}" aria-label="${escapeHtml(t.short)} on">${m.on ? 'On' : 'Off'}</button>
-      <label class="mix-vol"><span>Vol</span><input type="range" data-k="volume" min="0" max="1.5" step="0.01" value="${m.volume}" aria-label="${escapeHtml(t.short)} volume"><output>${volPct(m.volume)}</output></label>
+      <div class="mix-name"><span class="dot"></span><input class="name-input" data-k="name" value="${name}" maxlength="24" enterkeyhint="done" autocomplete="off" spellcheck="false" aria-label="Track name (tap to rename)" title="Tap to rename"></div>
+      <button type="button" class="mute" data-k="on" aria-pressed="${m.on}" aria-label="${name} on">${m.on ? 'On' : 'Off'}</button>
+      <label class="mix-vol"><span>Vol</span><input type="range" data-k="volume" min="0" max="1.5" step="0.01" value="${m.volume}" aria-label="${name} volume"><output>${volPct(m.volume)}</output></label>
       <div class="mix-double">
-        <select data-k="semitones" aria-label="${escapeHtml(t.short)} pitch double">
+        <select data-k="semitones" aria-label="${name} pitch double">
           ${SEMITONES.map((s) => `<option value="${s.value}" ${s.value === dbl ? 'selected' : ''}>${s.value ? s.label : 'No double'}</option>`).join('')}
         </select>
       </div>
-      <label class="mix-dvol ${dbl ? '' : 'disabled'}"><span>${busy ? '<span class="busy"><span class="spinner"></span>Preparing</span>' : 'Double'}</span><input type="range" data-k="dvolume" min="0" max="1.5" step="0.01" value="${m.double.volume}" aria-label="${escapeHtml(t.short)} double volume"><output>${volPct(m.double.volume)}</output></label>
+      <label class="mix-dvol ${dbl ? '' : 'disabled'}"><span>${busy ? '<span class="busy"><span class="spinner"></span>Preparing</span>' : 'Double'}</span><input type="range" data-k="dvolume" min="0" max="1.5" step="0.01" value="${m.double.volume}" aria-label="${name} double volume"><output>${volPct(m.double.volume)}</output></label>
     </div>`;
   }).join('');
 }
@@ -556,7 +545,7 @@ function stopPlayback() {
   app.engine?.stop();
   setPlayingUI(false);
   cancelAnimationFrame(app.raf);
-  timeline.playheads = null;
+  timeline.playhead = null;
   timeline.draw();
   releaseWakeLock();
   updateNow();
@@ -574,7 +563,7 @@ let lastStep = -1;
 function frame() {
   if (!app.engine.playing) return;
   if (!$('#loop-body').hidden) {
-    timeline.playheads = app.engine.playheads();
+    timeline.playhead = app.engine.playhead();
     timeline.draw();
   }
   updateNow();
@@ -747,55 +736,20 @@ function bind() {
     if (z === 'in') timeline.zoom(2);
     else if (z === 'out') timeline.zoom(0.5);
     else if (z === 'fit') timeline.fit();
-    else { timeline.focus(z); setNudgeTarget(z); }
+    else timeline.focus(z);
   }));
   for (const which of ['start', 'end']) {
-    const input = $(`#loop-${which}`);
-    input.addEventListener('change', () => {
-      const v = Number(input.value);
-      if (!Number.isFinite(v)) return renderLoopFields();
-      setNudgeTarget(which);
-      timeline.setHandle(which, v, false);
-      commitLoop();
+    const slider = $(`#${which}-slider`);
+    slider.addEventListener('input', () => {
+      timeline.active = which;
+      timeline.setHandle(which, Number(slider.value), true);
     });
-    input.addEventListener('focus', () => setNudgeTarget(which));
+    slider.addEventListener('change', () => commitLoop());
   }
-  $$('[data-nudge-target]').forEach((b) => b.addEventListener('click', () => setNudgeTarget(b.dataset.nudgeTarget)));
-  $$('[data-nudge]').forEach((b) => b.addEventListener('click', () => nudge(Number(b.dataset.nudge))));
-  $('#tl-canvas').addEventListener('pointerdown', () => setTimeout(() => setNudgeTarget(timeline.active)));
+  $$('.fine').forEach(bindFineButton);
   $('#btn-reset-loop').addEventListener('click', () => {
-    const fresh = createProject(app.project.sourceKey, app.tracks);
-    app.project.loop = fresh.loop;
-    app.project.mult = fresh.mult;
-    timeline.updateMultOptions();
+    app.project.loop = createProject(app.project.sourceKey, app.tracks).loop;
     timeline.fit();
-    commitLoop();
-  });
-  $('#bpm').addEventListener('input', () => {
-    const v = Number($('#bpm').value);
-    app.project.bpm = v >= 30 && v <= 300 ? v : null;
-    renderLoopFields();
-    timeline.draw();
-    save();
-  });
-  $('#bpb').addEventListener('input', () => {
-    const v = Math.round(Number($('#bpb').value));
-    app.project.beatsPerBar = v >= 1 && v <= 16 ? v : 4;
-    renderLoopFields();
-    timeline.draw();
-    save();
-  });
-  $('#snap').addEventListener('change', () => { app.project.snap = $('#snap').checked; save(); });
-  $('#btn-fit-bars').addEventListener('click', () => {
-    const p = app.project;
-    if (!(p.bpm > 0)) { toast('Enter the BPM first.'); $('#bpm').focus(); return; }
-    const bars = Math.max(1, Math.round(Number($('#bars').value) || 4));
-    const end = p.loop.start + (bars * (p.beatsPerBar || 4) * 60) / p.bpm;
-    const max = maxLoopEnd(p, app.tracks);
-    if (end > max + 1e-6) { toast(`${bars} bars at ${p.bpm} BPM is longer than your tracks.`); return; }
-    const snap = p.snap; p.snap = false;
-    timeline.setHandle('end', end, false);
-    p.snap = snap;
     commitLoop();
   });
   $('#btn-confirm-loop').addEventListener('click', () => {
@@ -852,8 +806,21 @@ function bind() {
     app.engine?.refresh();
     save();
   });
+  mixer.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && e.target.dataset.k === 'name') e.target.blur();
+  });
   mixer.addEventListener('change', (e) => {
     const row = e.target.closest('.mix-row');
+    if (row && e.target.dataset.k === 'name') {
+      const names = app.project.names;
+      const v = e.target.value.trim();
+      if (v) names[row.dataset.id] = v;
+      else delete names[row.dataset.id];
+      e.target.value = trackName(app.project, app.tracks.find((t) => t.id === row.dataset.id));
+      timeline.renderLabels();
+      save();
+      return;
+    }
     if (!row || e.target.dataset.k !== 'semitones') return;
     const m = getArrangement(app.project, app.editing).mix[row.dataset.id];
     m.double.semitones = Number(e.target.value);

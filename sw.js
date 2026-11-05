@@ -1,6 +1,6 @@
 // App-shell cache so Loop Road opens offline (tracks themselves are cached
 // in IndexedDB by the app). Bump VERSION when you change files.
-const VERSION = 'loop-road-v1';
+const VERSION = 'loop-road-v2';
 const SHELL = [
   './',
   'index.html',
@@ -10,6 +10,7 @@ const SHELL = [
   'js/drive.js',
   'js/cache.js',
   'js/engine.js',
+  'js/lanes.js',
   'js/pitch.js',
   'js/pitch-worker.js',
   'js/dsp/pitchshift.js',
