@@ -28,10 +28,16 @@ key:
    **Create credentials → API key**.
 3. Restrict the key to the **Google Drive API** and to your site's address
    (HTTP referrer, for example `https://you.github.io/*`).
-4. Paste it in the app's **Settings** (gear icon). It's stored on that device only.
+4. Put it in `js/config.js` as `DEFAULT_DRIVE_API_KEY` and deploy. Everyone
+   using the site then just pastes Drive links: the key field disappears from
+   Settings, and visitors never see anything about keys.
 
-To avoid pasting it on every device, put it in `js/config.js`
-(`DEFAULT_DRIVE_API_KEY`). Do this only with a key restricted as in step 3.
+A key in a website's code is visible to anyone who looks. That's normal for
+this kind of key, and step 3's restrictions are what keep it safe: the key
+then only reads public Drive files, and only from your site.
+
+Without a built-in key, each person can paste their own key in **Settings**
+(gear icon), stored on their device only.
 
 You can also skip Drive and **open audio files from the device**.
 

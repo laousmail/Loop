@@ -257,6 +257,7 @@
   <dialog id="settings" aria-labelledby="settings-title">
     <form method="dialog" class="dialog-body" id="settings-form">
       <h2 id="settings-title">Settings</h2>
+      <div id="key-section" class="key-section">
       <label for="api-key" class="field-label">Google Drive API key</label>
       <input id="api-key" type="text" autocomplete="off" spellcheck="false" placeholder="AIza…">
       <p class="hint">Browsers can only read public Drive folders through Google’s API, so the app needs a free key. It stays on this device.</p>
@@ -269,12 +270,14 @@
           <li>Paste the key above.</li>
         </ol>
       </details>
+      </div>
       <div class="dialog-row">
         <button type="button" class="btn ghost small" id="btn-clear-cache">Clear downloaded audio</button>
       </div>
       <div class="dialog-actions">
-        <button value="cancel" class="btn ghost" formnovalidate>Cancel</button>
+        <button value="cancel" class="btn ghost" id="btn-cancel-settings" formnovalidate>Cancel</button>
         <button value="save" class="btn primary" id="btn-save-settings">Save key</button>
+        <button value="cancel" class="btn primary" id="btn-close-settings" formnovalidate hidden>Done</button>
       </div>
     </form>
   </dialog>

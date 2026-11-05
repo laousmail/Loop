@@ -33,7 +33,9 @@ const app = {
 // --- helpers ---------------------------------------------------------------
 
 const API_KEY = 'loop:apiKey';
-const apiKey = () => storage.get(API_KEY) || DEFAULT_DRIVE_API_KEY || '';
+const BUILT_IN_KEY = Boolean(DEFAULT_DRIVE_API_KEY);
+// A key built into the site always wins, so visitors never deal with keys.
+const apiKey = () => DEFAULT_DRIVE_API_KEY || storage.get(API_KEY) || '';
 
 let toastTimer = 0;
 function toast(msg, ms = 2600) {
@@ -187,7 +189,13 @@ async function loadDrive(text) {
     openProject(sourceKey, src.name, tracks, { kind: 'drive', link: text.trim() });
     addRecent({ sourceKey, name: src.name, link: text.trim(), count: tracks.length });
   } catch (e) {
-    showLoadError(e.message || String(e));
+    let msg = e.message || String(e);
+    if (BUILT_IN_KEY && ['key', 'key-referrer', 'api-disabled'].includes(e.code)) {
+      // Visitors can't fix the site's key, so don't send them to Settings.
+      msg = 'Loop Road can’t connect to Google Drive right now. Try again later, or open the files from your device below.';
+      console.error('Drive key problem:', e.code, e.message);
+    }
+    showLoadError(msg);
     progress.hide();
   } finally {
     setLoading(false);
@@ -694,8 +702,11 @@ function renderRecent() {
 // --- settings --------------------------------------------------------------
 
 function openSettings() {
+  $('#key-section').hidden = BUILT_IN_KEY;
+  $('#btn-save-settings').hidden = BUILT_IN_KEY;
+  $('#btn-cancel-settings').hidden = BUILT_IN_KEY;
+  $('#btn-close-settings').hidden = !BUILT_IN_KEY;
   $('#api-key').value = storage.get(API_KEY) || '';
-  $('#api-key').placeholder = DEFAULT_DRIVE_API_KEY ? 'Using the key built into this site' : 'AIza…';
   $('#settings').showModal();
 }
 
@@ -720,7 +731,7 @@ function bind() {
   $('#btn-change').addEventListener('click', closeProject);
   $('#btn-settings').addEventListener('click', openSettings);
   $('#settings').addEventListener('close', () => {
-    if ($('#settings').returnValue === 'save') {
+    if ($('#settings').returnValue === 'save' && !BUILT_IN_KEY) {
       storage.set(API_KEY, $('#api-key').value.trim());
       toast('API key saved on this device.');
     }
